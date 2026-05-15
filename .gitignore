@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Environment & secrets
+.env
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+.cursor/
+
+# PyInstaller
+*.spec.bak
+
+# Local / temp
+*.log
+acv.txt
