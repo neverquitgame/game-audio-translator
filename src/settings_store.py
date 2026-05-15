@@ -21,8 +21,10 @@ DEFAULTS: dict = {
     "vad_aggressiveness": 2,
     "sample_rate": 16000,
     "chunk_duration_ms": 30,
-    "gemini_model": "gemini-2.0-flash",
+    "gemini_model": "gemini-2.5-flash",
     "llm_priority": ["gemini"],
+    "onboarding_completed": False,
+    "preferred_device_index": None,
 }
 
 
@@ -37,7 +39,11 @@ def load() -> dict:
     if path.exists():
         try:
             saved = json.loads(path.read_text(encoding="utf-8"))
-            return {**DEFAULTS, **saved}
+            merged = {**DEFAULTS, **saved}
+            # Người dùng cũ (trước onboarding): bỏ qua wizard lần đầu nâng cấp
+            if "onboarding_completed" not in saved:
+                merged["onboarding_completed"] = True
+            return merged
         except Exception as e:
             logger.warning(f"Không đọc được settings.json, dùng defaults: {e}")
     return DEFAULTS.copy()

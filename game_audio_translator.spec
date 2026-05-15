@@ -1,5 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec file — build with: pyinstaller game_audio_translator.spec
+# PyInstaller spec — build:
+#   Windows : pyinstaller game_audio_translator.spec
+#   macOS   : pyinstaller game_audio_translator.spec
+#             (thêm --target-arch arm64 nếu build cho Apple Silicon)
 
 import sys
 from pathlib import Path
@@ -11,7 +14,6 @@ a = Analysis(
     pathex=["."],
     binaries=[],
     datas=[
-        # Đưa toàn bộ thư mục src vào bundle
         ("src", "src"),
     ],
     hiddenimports=[
@@ -23,7 +25,7 @@ a = Analysis(
         "pyaudio",
         "pyaudiowpatch",
         "webrtcvad",
-        # AI / Google
+        # AI
         "google.genai",
         "google.genai.types",
         "google.auth",
@@ -31,28 +33,28 @@ a = Analysis(
         # Numpy
         "numpy",
         "numpy.core._multiarray_umath",
+        # PySide6 — thêm các module Qt cần thiết
+        "PySide6",
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "PySide6.QtWidgets",
         # Misc
-        "dotenv",
-        "tkinter",
-        "tkinter.ttk",
-        "tkinter.messagebox",
         "queue",
         "threading",
         "logging",
-        # Secure keyring
         "keyring",
         "keyring.backends",
         "keyring.backends.Windows",
         "keyring.backends.fail",
         "keyrings.alt",
         "keyrings.alt.file",
-        "webbrowser",
+        "platformdirs",
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # Loại bỏ các module không cần để giảm kích thước
+        "tkinter",          # Không dùng Tkinter nữa
         "matplotlib",
         "PIL",
         "IPython",
@@ -79,17 +81,32 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,          # Nén bằng UPX nếu có — giảm ~30% kích thước
+    upx=True,
     upx_exclude=[
         "vcruntime140.dll",
         "python3*.dll",
         "api-ms-win-*.dll",
+        "Qt6*.dll",         # Không nén Qt DLL — tránh crash
     ],
     runtime_tmpdir=None,
-    console=False,     # Ẩn cửa sổ console — chỉ hiện GUI
+    console=False,
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # icon="assets/icon.ico",  # Bỏ comment nếu có file icon .ico
+    # icon="assets/icon.ico",   # Windows
 )
+
+# macOS: đóng gói thành .app bundle
+if sys.platform == "darwin":
+    app = BUNDLE(
+        exe,
+        name="GameAudioTranslator.app",
+        # icon="assets/icon.icns",  # macOS icon
+        bundle_identifier="com.silotech.gameaudiotranslator",
+        info_plist={
+            "NSMicrophoneUsageDescription": "Ứng dụng cần truy cập micro để nhận dạng giọng nói.",
+            "NSHighResolutionCapable": True,
+            "LSUIElement": False,
+        },
+    )
