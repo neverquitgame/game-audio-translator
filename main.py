@@ -1,11 +1,43 @@
 import sys
+
+# ── PyInstaller + macOS multiprocessing fix ───────────────────────────────────
+# On macOS, multiprocessing spawns subprocesses by re-launching the frozen
+# executable with argv like: [exe, "-B", "-S", "-I", "-c", "<python code>"].
+# The frozen bootloader ignores the -c flag and runs main() again, causing
+# infinite app instances. We intercept this early, before any other import.
+if getattr(sys, "frozen", False) and "-c" in sys.argv:
+    _c_idx = sys.argv.index("-c")
+    if _c_idx + 1 < len(sys.argv):
+        exec(sys.argv[_c_idx + 1])  # noqa: S102
+    sys.exit(0)
+
+import multiprocessing
+multiprocessing.freeze_support()  # also handles --multiprocessing-fork on Windows
+# ─────────────────────────────────────────────────────────────────────────────
+
 import queue
 import logging
 import threading
+import json
+import time
 from typing import Optional
+
+# #region agent log - debug bootstrap crash
+_DBG_LOG = "/Users/phuclan/Documents/Silotech/game-audio-translator/.cursor/debug-782c89.log"
+def _dbg(msg: str, data: dict = None, hypothesis: str = ""):
+    try:
+        import os; os.makedirs(os.path.dirname(_DBG_LOG), exist_ok=True)
+        entry = {"sessionId": "782c89", "timestamp": int(time.time()*1000), "location": "main.py", "message": msg, "hypothesisId": hypothesis, "data": data or {}}
+        with open(_DBG_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+_dbg("=== APP STARTED === Python imports begin", {"frozen": getattr(sys, "frozen", False), "platform": sys.platform, "argv": sys.argv}, "H2")
+# #endregion
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QTimer, QObject, Signal
+_dbg("PySide6 imported successfully", {}, "H1")
 
 from src.config import Config
 from src.settings_store import load as load_settings
@@ -27,7 +59,6 @@ logger = logging.getLogger(__name__)
 
 
 def _build_translator() -> MultiTranslator:
-    Config.reload()
     priority = Config.LLM_PRIORITY
     all_translators = {
         "gemini": LiteLLMTranslator(
@@ -193,7 +224,7 @@ class App:
         self._capture.close()
 
     def _on_settings_changed(self, new_settings: dict):
-        Config.reload()
+        Config.reload_with_keys()  # called from main thread via UI signal
         self._translator = _build_translator()
         self._ui.update_active_llm(self._translator.active_provider)
         logger.info("Settings updated, translator rebuilt")
@@ -223,10 +254,20 @@ class Bootstrap:
         self._signals.status_changed.connect(self._apply_status)
 
     def run(self):
-        self._loading = LoadingScreen()
+        # #region agent log
+        _dbg("Bootstrap.run() — creating LoadingScreen", {}, "H3")
+        # #endregion
+        try:
+            self._loading = LoadingScreen()
+            _dbg("LoadingScreen created OK", {}, "H3")
+        except Exception as _e:
+            _dbg("LoadingScreen FAILED", {"error": str(_e)}, "H3")
+            raise
         self._loading.show()
+        _dbg("LoadingScreen.show() called — starting Qt event loop", {}, "H3")
         QTimer.singleShot(80, self._start_init)
         self._qt.exec()
+        _dbg("Qt event loop EXITED", {}, "H4")
 
     def _start_init(self):
         threading.Thread(target=self._init_worker, daemon=True, name="bootstrap").start()
@@ -239,13 +280,24 @@ class Bootstrap:
             self._loading.set_status(msg)
 
     def _init_worker(self):
+        # #region agent log
+        _dbg("_init_worker started in background thread", {}, "H2")
+        # #endregion
         try:
             self._set_status("Đang tải cấu hình...")
             Config.reload()
+            _dbg("Config.reload() OK", {"whisper": Config.WHISPER_MODEL}, "H2")
+
+            self._set_status("Đang xác thực API keys...")
+            # Load API keys from keychain here — loading screen is already visible,
+            # so any macOS Keychain dialog appears while the user can see the app UI.
+            Config.load_api_keys()
+            _dbg("load_api_keys() done", {"has_gemini": bool(Config.GEMINI_API_KEY)}, "H2")
 
             self._set_status("Đang quét thiết bị âm thanh...")
             capture = AudioCapture()
             devices = capture.list_audio_devices()
+            _dbg("AudioCapture OK", {"device_count": len(devices)}, "H2")
             if not devices:
                 logger.warning("No audio devices found")
 
@@ -256,9 +308,11 @@ class Bootstrap:
                 on_error=lambda e: logger.error(f"Whisper error: {e}"),
             )
             transcriber.wait_until_ready(timeout=300.0)
+            _dbg("Transcriber ready", {"is_ready": transcriber.is_ready}, "H2")
 
             self._set_status("Đang chuẩn bị bộ dịch...")
             translator = _build_translator()
+            _dbg("Translator built", {"active": translator.active_provider}, "H2")
 
             self._init_result = {
                 "capture": capture,
@@ -268,6 +322,7 @@ class Bootstrap:
             }
             self._signals.init_complete.emit()
         except Exception as e:
+            _dbg("_init_worker EXCEPTION", {"error": str(e), "type": type(e).__name__}, "H2")
             logger.exception("Bootstrap init failed")
             self._signals.init_failed.emit(str(e))
 
@@ -276,11 +331,16 @@ class Bootstrap:
             self._loading.set_status(f"❌ Lỗi: {error}")
 
     def _on_init_complete(self):
+        # #region agent log
+        _dbg("_on_init_complete called", {}, "H4")
+        # #endregion
         if self._loading:
             self._loading.close_loading()
 
         settings = load_settings()
-        if not settings.get("onboarding_completed"):
+        onboarding_done = settings.get("onboarding_completed")
+        _dbg("onboarding_completed check", {"value": onboarding_done}, "H4")
+        if not onboarding_done:
             wizard = OnboardingWizard(
                 devices=self._init_result["devices"],
                 on_complete=self._launch_main_app,
@@ -292,9 +352,14 @@ class Bootstrap:
             self._launch_main_app()
 
     def _launch_main_app(self):
+        # #region agent log
+        _dbg("_launch_main_app called", {}, "H5")
+        # #endregion
         try:
             self._launch_main_app_inner()
+            _dbg("_launch_main_app_inner completed OK", {}, "H5")
         except Exception as e:
+            _dbg("_launch_main_app_inner FAILED", {"error": str(e), "type": type(e).__name__}, "H5")
             logger.exception(f"_launch_main_app failed: {e}")
 
     def _launch_main_app_inner(self):
@@ -344,12 +409,30 @@ class Bootstrap:
 
 
 def main():
-    qt_app = QApplication(sys.argv)
+    # #region agent log - QApplication creation
+    _dbg("main() called — creating QApplication", {}, "H1")
+    try:
+        qt_app = QApplication(sys.argv)
+        _dbg("QApplication created OK", {}, "H1")
+    except Exception as _e:
+        _dbg("QApplication FAILED", {"error": str(_e)}, "H1")
+        raise
+    # #endregion
     qt_app.setApplicationName("GameAudioTranslator")
     qt_app.setOrganizationName("Silotech")
     qt_app.setQuitOnLastWindowClosed(False)
+    # #region agent log
+    _dbg("About to run Bootstrap", {}, "H3")
+    # #endregion
     Bootstrap(qt_app).run()
 
 
 if __name__ == "__main__":
-    main()
+    # #region agent log - top-level exception guard
+    try:
+        main()
+    except Exception as _top_e:
+        import traceback
+        _dbg("TOP-LEVEL EXCEPTION", {"error": str(_top_e), "traceback": traceback.format_exc()}, "H2")
+        raise
+    # #endregion

@@ -1,14 +1,10 @@
 """
-Lưu trữ API keys bảo mật thông qua OS keyring:
-  - Windows  → Windows Credential Manager
-  - macOS    → Keychain
-  - Linux    → GNOME Keyring / KWallet
+Lưu trữ API keys trong settings.json (~/Library/Application Support/GameAudioTranslator/).
+Không dùng OS Keychain — không bao giờ hiện dialog mật khẩu.
 """
 import logging
 
 logger = logging.getLogger(__name__)
-
-_SERVICE = "GameAudioTranslator"
 
 _PROVIDERS = {
     "gemini":    "gemini_api_key",
@@ -17,50 +13,37 @@ _PROVIDERS = {
 }
 
 
-def _get_keyring():
-    try:
-        import keyring
-        return keyring
-    except ImportError:
-        return None
+def _settings_get(provider: str) -> str:
+    from src.settings_store import load
+    key_name = _PROVIDERS.get(provider, "")
+    if not key_name:
+        return ""
+    return load().get(key_name, "") or ""
+
+
+def _settings_set(provider: str, api_key: str) -> bool:
+    from src.settings_store import load, save
+    key_name = _PROVIDERS.get(provider, "")
+    if not key_name:
+        return False
+    s = load()
+    s[key_name] = api_key.strip()
+    return save(s)
 
 
 def get_api_key(provider: str = "gemini") -> str:
-    kr = _get_keyring()
-    key_name = _PROVIDERS.get(provider, "")
-    if kr and key_name:
-        try:
-            return kr.get_password(_SERVICE, key_name) or ""
-        except Exception as e:
-            logger.error(f"Không đọc được keyring [{provider}]: {e}")
-    return ""
+    return _settings_get(provider)
 
 
 def save_api_key(provider: str, api_key: str) -> bool:
-    kr = _get_keyring()
-    key_name = _PROVIDERS.get(provider, "")
-    if not kr or not key_name:
-        logger.error(f"Keyring không khả dụng hoặc provider không hợp lệ: {provider}")
-        return False
-    try:
-        kr.set_password(_SERVICE, key_name, api_key.strip())
-        logger.info(f"API key [{provider}] đã lưu vào OS keyring")
-        return True
-    except Exception as e:
-        logger.error(f"Không lưu được keyring [{provider}]: {e}")
-        return False
+    ok = _settings_set(provider, api_key)
+    if ok:
+        logger.info(f"API key [{provider}] đã lưu vào settings.json")
+    return ok
 
 
 def delete_api_key(provider: str = "gemini") -> bool:
-    kr = _get_keyring()
-    key_name = _PROVIDERS.get(provider, "")
-    if not kr or not key_name:
-        return False
-    try:
-        kr.delete_password(_SERVICE, key_name)
-        return True
-    except Exception:
-        return False
+    return _settings_set(provider, "")
 
 
 def has_api_key(provider: str = "gemini") -> bool:

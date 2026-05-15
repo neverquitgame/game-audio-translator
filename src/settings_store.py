@@ -25,6 +25,10 @@ DEFAULTS: dict = {
     "llm_priority": ["gemini"],
     "onboarding_completed": False,
     "preferred_device_index": None,
+    # API keys stored here instead of OS Keychain to avoid password dialogs
+    "gemini_api_key": "",
+    "openai_api_key": "",
+    "anthropic_api_key": "",
 }
 
 

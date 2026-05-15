@@ -1,4 +1,3 @@
-import sys
 from src.settings_store import load as _load_settings, migrate_from_env_if_needed
 from src.keystore import get_api_key
 
@@ -9,10 +8,12 @@ _s = _load_settings()
 
 
 class Config:
-    # --- Secrets (OS keyring) ---
-    GEMINI_API_KEY: str = get_api_key("gemini")
-    OPENAI_API_KEY: str = get_api_key("openai")
-    ANTHROPIC_API_KEY: str = get_api_key("anthropic")
+    # API keys — intentionally empty at import time to avoid triggering macOS
+    # Keychain dialogs during module loading. Call Config.reload() or
+    # Config.load_api_keys() explicitly from the main thread before use.
+    GEMINI_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
+    ANTHROPIC_API_KEY: str = ""
 
     # --- Settings (settings.json) ---
     GEMINI_MODEL: str = _s["gemini_model"]
@@ -25,8 +26,21 @@ class Config:
     LLM_PRIORITY: list[str] = _s["llm_priority"]
 
     @classmethod
+    def load_api_keys(cls):
+        """Fetch API keys from OS keychain. Call ONCE from the main thread.
+        Only fetches keys for providers actually in LLM_PRIORITY to minimise
+        the number of macOS Keychain permission dialogs shown to the user."""
+        needed = set(cls.LLM_PRIORITY) if cls.LLM_PRIORITY else {"gemini"}
+        if "gemini" in needed:
+            cls.GEMINI_API_KEY = get_api_key("gemini")
+        if "openai" in needed:
+            cls.OPENAI_API_KEY = get_api_key("openai")
+        if "anthropic" in needed:
+            cls.ANTHROPIC_API_KEY = get_api_key("anthropic")
+
+    @classmethod
     def reload(cls):
-        """Reload settings từ disk (sau khi user thay đổi trong UI)."""
+        """Reload settings from disk. Does NOT re-fetch keychain keys."""
         s = _load_settings()
         cls.GEMINI_MODEL = s["gemini_model"]
         cls.WHISPER_MODEL = s["whisper_model"]
@@ -36,6 +50,12 @@ class Config:
         cls.SAMPLE_RATE = int(s["sample_rate"])
         cls.CHUNK_DURATION_MS = int(s["chunk_duration_ms"])
         cls.LLM_PRIORITY = s["llm_priority"]
+
+    @classmethod
+    def reload_with_keys(cls):
+        """Reload settings AND re-fetch ALL API keys (call from main thread only,
+        e.g. after user changes LLM_PRIORITY in Settings)."""
+        cls.reload()
         cls.GEMINI_API_KEY = get_api_key("gemini")
         cls.OPENAI_API_KEY = get_api_key("openai")
         cls.ANTHROPIC_API_KEY = get_api_key("anthropic")
