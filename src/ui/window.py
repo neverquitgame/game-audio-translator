@@ -294,6 +294,9 @@ class TranslatorUI(QMainWindow):
         self._toggle_btn.setMinimumWidth(120)
         self._toggle_btn.setToolTip("Bắt đầu / Dừng  (Ctrl+Enter)")
         self._toggle_btn.clicked.connect(self._on_toggle)
+        if not self._devices:
+            self._toggle_btn.setEnabled(False)
+            self._toggle_btn.setToolTip("Không tìm thấy thiết bị âm thanh")
 
         self._llm_label = QLabel("⚪  Chưa kết nối")
         self._llm_label.setObjectName("llmBadgeEmpty")
@@ -668,7 +671,7 @@ class TranslatorUI(QMainWindow):
     def _on_toggle(self):
         if not self._running:
             idx = self._device_combo.currentIndex()
-            device_index = self._devices[idx]["index"] if self._devices else None
+            device_index = self._devices[idx]["index"] if self._devices and 0 <= idx < len(self._devices) else None
             self._running = True
             self._toggle_btn.setObjectName("btnStop")
             self._toggle_btn.setText("■  Dừng")

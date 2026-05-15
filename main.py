@@ -188,7 +188,6 @@ class App:
             self._audio_queue.put_nowait(None)
         except queue.Full:
             pass
-        self._capture.stop_capture()
         if self._pipeline_thread and self._pipeline_thread.is_alive():
             self._pipeline_thread.join(timeout=6)
         self._capture.close()
@@ -287,10 +286,18 @@ class Bootstrap:
                 on_complete=self._launch_main_app,
             )
             wizard.show()
+            wizard.raise_()
+            wizard.activateWindow()
         else:
             self._launch_main_app()
 
     def _launch_main_app(self):
+        try:
+            self._launch_main_app_inner()
+        except Exception as e:
+            logger.exception(f"_launch_main_app failed: {e}")
+
+    def _launch_main_app_inner(self):
         r = self._init_result
         Config.reload()
 
@@ -301,10 +308,16 @@ class Bootstrap:
             loading2.show()
             loading2.set_status(f"Đang tải Whisper ({Config.WHISPER_MODEL})...")
             new_t = Transcriber(model_size=Config.WHISPER_MODEL)
-            new_t.wait_until_ready(timeout=300.0)
+            ready = new_t.wait_until_ready(timeout=300.0)
             loading2.close_loading()
-            r["transcriber"] = new_t
-            transcriber = new_t
+            if not ready:
+                logger.error(
+                    f"Không tải được Whisper model '{Config.WHISPER_MODEL}' — "
+                    f"tiếp tục với model cũ '{transcriber.model_size}'"
+                )
+            else:
+                r["transcriber"] = new_t
+                transcriber = new_t
 
         self._ui = TranslatorUI(
             devices=r["devices"],
@@ -320,6 +333,9 @@ class Bootstrap:
             devices=r["devices"],
         )
         self._ui.show()
+        self._ui.raise_()
+        self._ui.activateWindow()
+        self._qt.setQuitOnLastWindowClosed(True)
         self._qt.aboutToQuit.connect(self._on_quit)
 
     def _on_quit(self):
@@ -331,6 +347,7 @@ def main():
     qt_app = QApplication(sys.argv)
     qt_app.setApplicationName("GameAudioTranslator")
     qt_app.setOrganizationName("Silotech")
+    qt_app.setQuitOnLastWindowClosed(False)
     Bootstrap(qt_app).run()
 
 

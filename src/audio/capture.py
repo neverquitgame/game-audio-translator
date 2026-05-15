@@ -29,6 +29,7 @@ class AudioCapture:
         self._stream = None
         self._thread = None
         self._running = False
+        self._stop_lock = threading.Lock()
 
     def list_audio_devices(self) -> list[dict]:
         devices = []
@@ -119,19 +120,22 @@ class AudioCapture:
             return False
 
     def stop_capture(self):
-        if not self._running and self._stream is None:
-            return
-        self._running = False
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=2)
-            self._thread = None
-        if self._stream:
+        with self._stop_lock:
+            if not self._running and self._stream is None:
+                return
+            self._running = False
+            # Atomically grab references and clear them so no other thread can close them
+            stream, self._stream = self._stream, None
+            thread, self._thread = self._thread, None
+
+        # Do blocking operations outside the lock to avoid holding lock during join/close
+        if thread and thread.is_alive():
+            thread.join(timeout=2)
+        if stream:
             try:
-                self._stream.close()
+                stream.close()
             except Exception as e:
                 logger.error(f"Error closing stream: {e}")
-            finally:
-                self._stream = None
             logger.info("Audio capture stopped")
 
     def close(self):
