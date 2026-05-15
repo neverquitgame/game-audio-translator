@@ -28,7 +28,7 @@ class MultiTranslator:
         for translator in self._translators:
             try:
                 result = translator.translate(text, source_lang, target_lang)
-                if result:
+                if result is not None:
                     return result
             except Exception as e:
                 err_str = str(e).lower()
