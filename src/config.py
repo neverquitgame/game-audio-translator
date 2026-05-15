@@ -1,44 +1,59 @@
-import os
 import sys
-from pathlib import Path
-from dotenv import load_dotenv
+from src.settings_store import load as _load_settings, migrate_from_env_if_needed
+from src.keystore import get_api_key
 
-# Khi đóng gói bằng PyInstaller, .env phải nằm cạnh file .exe
-if getattr(sys, "frozen", False):
-    _base_dir = Path(sys.executable).parent
-else:
-    _base_dir = Path(__file__).parent.parent
+# Migrate .env → settings.json nếu lần đầu chạy Phase 2
+migrate_from_env_if_needed()
 
-load_dotenv(_base_dir / ".env")
-
-
-def _resolve_api_key() -> str:
-    """Ưu tiên: OS keyring → biến môi trường / .env → chuỗi rỗng."""
-    from src.keystore import get_api_key as _keyring_get
-    key = _keyring_get()
-    if key:
-        return key
-    return os.getenv("GEMINI_API_KEY", "")
+_s = _load_settings()
 
 
 class Config:
-    GEMINI_API_KEY: str = _resolve_api_key()
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
-    TARGET_LANGUAGE: str = os.getenv("TARGET_LANGUAGE", "Vietnamese")
-    VAD_AGGRESSIVENESS: int = int(os.getenv("VAD_AGGRESSIVENESS", "2"))
-    SAMPLE_RATE: int = int(os.getenv("SAMPLE_RATE", "16000"))
-    CHUNK_DURATION_MS: int = int(os.getenv("CHUNK_DURATION_MS", "30"))
+    # --- Secrets (OS keyring) ---
+    GEMINI_API_KEY: str = get_api_key("gemini")
+    OPENAI_API_KEY: str = get_api_key("openai")
+    ANTHROPIC_API_KEY: str = get_api_key("anthropic")
+
+    # --- Settings (settings.json) ---
+    GEMINI_MODEL: str = _s["gemini_model"]
+    WHISPER_MODEL: str = _s["whisper_model"]
+    WHISPER_LANGUAGE: str = _s["whisper_language"]
+    TARGET_LANGUAGE: str = _s["target_language"]
+    VAD_AGGRESSIVENESS: int = int(_s["vad_aggressiveness"])
+    SAMPLE_RATE: int = int(_s["sample_rate"])
+    CHUNK_DURATION_MS: int = int(_s["chunk_duration_ms"])
+    LLM_PRIORITY: list[str] = _s["llm_priority"]
+
+    @classmethod
+    def reload(cls):
+        """Reload settings từ disk (sau khi user thay đổi trong UI)."""
+        s = _load_settings()
+        cls.GEMINI_MODEL = s["gemini_model"]
+        cls.WHISPER_MODEL = s["whisper_model"]
+        cls.WHISPER_LANGUAGE = s["whisper_language"]
+        cls.TARGET_LANGUAGE = s["target_language"]
+        cls.VAD_AGGRESSIVENESS = int(s["vad_aggressiveness"])
+        cls.SAMPLE_RATE = int(s["sample_rate"])
+        cls.CHUNK_DURATION_MS = int(s["chunk_duration_ms"])
+        cls.LLM_PRIORITY = s["llm_priority"]
+        cls.GEMINI_API_KEY = get_api_key("gemini")
+        cls.OPENAI_API_KEY = get_api_key("openai")
+        cls.ANTHROPIC_API_KEY = get_api_key("anthropic")
 
     @classmethod
     def validate(cls) -> list[str]:
         errors = []
-        if not cls.GEMINI_API_KEY:
-            errors.append("GEMINI_API_KEY is not set")
+        active = cls.LLM_PRIORITY[0] if cls.LLM_PRIORITY else "gemini"
+        if active == "gemini" and not cls.GEMINI_API_KEY:
+            errors.append("GEMINI_API_KEY chưa được cài đặt")
+        if active == "openai" and not cls.OPENAI_API_KEY:
+            errors.append("OPENAI_API_KEY chưa được cài đặt")
+        if active == "anthropic" and not cls.ANTHROPIC_API_KEY:
+            errors.append("ANTHROPIC_API_KEY chưa được cài đặt")
         if cls.VAD_AGGRESSIVENESS not in range(4):
-            errors.append("VAD_AGGRESSIVENESS must be 0-3")
+            errors.append("VAD_AGGRESSIVENESS phải từ 0-3")
         if cls.SAMPLE_RATE not in (8000, 16000, 32000, 48000):
-            errors.append("SAMPLE_RATE must be 8000, 16000, 32000, or 48000")
+            errors.append("SAMPLE_RATE phải là 8000/16000/32000/48000")
         if cls.CHUNK_DURATION_MS not in (10, 20, 30):
-            errors.append("CHUNK_DURATION_MS must be 10, 20, or 30 (webrtcvad requirement)")
+            errors.append("CHUNK_DURATION_MS phải là 10/20/30")
         return errors
