@@ -16,9 +16,18 @@ from src.settings_store import load as load_settings, save as save_settings
 logger = logging.getLogger(__name__)
 
 _STYLE = """
-QWizard, QWizardPage {
+QWizard, QWizardPage, QWizard::page, QWizard QWidget {
     background-color: #1e1e2e;
     color: #cdd6f4;
+}
+QWizardPage {
+    background-color: #1e1e2e;
+}
+QWizardPage QWidget {
+    background-color: transparent;
+}
+QWizard QFrame, QWizard QStackedWidget, QWizardPage QFrame {
+    background-color: #1e1e2e;
 }
 QWizard QAbstractButton {
     background-color: #313244;
@@ -106,9 +115,15 @@ def _p(text: str, dim: bool = False) -> QLabel:
     return lbl
 
 
+def _style_wizard_page(page: QWizardPage):
+    page.setAutoFillBackground(True)
+    page.setStyleSheet("background-color: #1e1e2e;")
+
+
 class WelcomePage(QWizardPage):
     def __init__(self):
         super().__init__()
+        _style_wizard_page(self)
         self.setTitle("Chào mừng đến Game Audio Translator")
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
@@ -126,6 +141,7 @@ class WelcomePage(QWizardPage):
 class ApiKeyPage(QWizardPage):
     def __init__(self):
         super().__init__()
+        _style_wizard_page(self)
         self.setTitle("API Key dịch thuật")
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
@@ -177,6 +193,7 @@ class ApiKeyPage(QWizardPage):
 class PreferencesPage(QWizardPage):
     def __init__(self):
         super().__init__()
+        _style_wizard_page(self)
         self.setTitle("Tùy chọn dịch & nhận dạng")
         settings = load_settings()
         layout = QVBoxLayout(self)
@@ -229,6 +246,7 @@ class PreferencesPage(QWizardPage):
 class DevicePage(QWizardPage):
     def __init__(self, devices: list[dict]):
         super().__init__()
+        _style_wizard_page(self)
         self.setTitle("Thiết bị âm thanh")
         self._devices = devices
         settings = load_settings()
@@ -268,6 +286,7 @@ class DevicePage(QWizardPage):
 class FinishPage(QWizardPage):
     def __init__(self):
         super().__init__()
+        _style_wizard_page(self)
         self.setTitle("Sẵn sàng!")
         self._layout = QVBoxLayout(self)
 
@@ -300,7 +319,6 @@ class OnboardingWizard(QWizard):
 
         self.setWindowTitle("Thiết lập Game Audio Translator")
         self.setFixedSize(560, 440)
-        self.setStyleSheet(_STYLE)
         self.setWizardStyle(QWizard.ModernStyle)
         self.setOption(QWizard.NoBackButtonOnStartPage, True)
         self.setButtonText(QWizard.NextButton, "Tiếp theo →")
@@ -318,6 +336,7 @@ class OnboardingWizard(QWizard):
         self.addPage(self._device_page)
         self.addPage(FinishPage())
 
+        self.setStyleSheet(_STYLE)
         self.finished.connect(self._on_finished)
 
         screen = self.screen().geometry()

@@ -20,6 +20,7 @@ import logging
 import threading
 import json
 import time
+import signal
 from typing import Optional
 
 # #region agent log - debug bootstrap crash
@@ -246,6 +247,7 @@ class Bootstrap:
         self._init_result: Optional[dict] = None
         self._app: Optional[App] = None
         self._ui: Optional[TranslatorUI] = None
+        self._wizard: Optional[OnboardingWizard] = None
 
         # QObject phải được tạo trên main thread — wire signals ở đây
         self._signals = _BootstrapSignals()
@@ -341,13 +343,13 @@ class Bootstrap:
         onboarding_done = settings.get("onboarding_completed")
         _dbg("onboarding_completed check", {"value": onboarding_done}, "H4")
         if not onboarding_done:
-            wizard = OnboardingWizard(
+            self._wizard = OnboardingWizard(
                 devices=self._init_result["devices"],
                 on_complete=self._launch_main_app,
             )
-            wizard.show()
-            wizard.raise_()
-            wizard.activateWindow()
+            self._wizard.show()
+            self._wizard.raise_()
+            self._wizard.activateWindow()
         else:
             self._launch_main_app()
 
@@ -421,6 +423,7 @@ def main():
     qt_app.setApplicationName("GameAudioTranslator")
     qt_app.setOrganizationName("Silotech")
     qt_app.setQuitOnLastWindowClosed(False)
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
     # #region agent log
     _dbg("About to run Bootstrap", {}, "H3")
     # #endregion
