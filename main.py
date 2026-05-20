@@ -24,7 +24,7 @@ import signal
 from typing import Optional
 
 # #region agent log - debug bootstrap crash
-_DBG_LOG = "/Users/phuclan/Documents/Silotech/game-audio-translator/.cursor/debug-782c89.log"
+_DBG_LOG = "/Users/phuclan/Documents/game-audio-translator/.cursor/debug-782c89.log"
 def _dbg(msg: str, data: dict = None, hypothesis: str = ""):
     try:
         import os; os.makedirs(os.path.dirname(_DBG_LOG), exist_ok=True)
@@ -45,6 +45,7 @@ from src.settings_store import load as load_settings
 from src.audio.capture import AudioCapture
 from src.audio.vad import VoiceActivityDetector
 from src.ai.transcriber import Transcriber
+from src.ai.transcription_validator import TranscriptionValidator
 from src.ai.translators.litellm_t import LiteLLMTranslator
 from src.ai.multi_translator import MultiTranslator
 from src.ui.window import TranslatorUI
@@ -115,6 +116,7 @@ class App:
         self._ui._on_settings_changed = self._on_settings_changed
 
         self._ui.update_active_llm(self._translator.active_provider)
+        self._update_start_button_state()
 
         settings = load_settings()
         preferred = settings.get("preferred_device_index")
@@ -128,6 +130,18 @@ class App:
             self._ui.update_status("⏳  Đang tải Whisper model...")
         else:
             self._ui.update_status("⏸  Đang chờ")
+
+        if self._translator.active_provider == "none":
+            self._ui.update_status("❌  Chưa có translator khả dụng. Vui lòng cấu hình API key.")
+
+    def _update_start_button_state(self):
+        available = self._translator.active_provider != "none"
+        tooltip = (
+            "Bắt đầu dịch"
+            if available
+            else "Cần API key Gemini/OpenAI/Anthropic hoặc Ollama local để bắt đầu"
+        )
+        self._ui.set_start_enabled(available, tooltip)
 
     # ── Pipeline ──────────────────────────────────────────────────────────────
 
@@ -155,7 +169,7 @@ class App:
 
         try:
             while not self._stop_event.is_set():
-                speech_pcm = self._vad.get_speech_segment(self._audio_queue)
+                speech_pcm = self._vad.get_speech_segment(self._audio_queue, self._stop_event)
                 if speech_pcm is None:
                     break
 
@@ -167,6 +181,19 @@ class App:
                 if not text:
                     self._ui.update_status("🎙  Đang nghe...")
                     continue
+
+                # Validate transcription before sending to LLM to avoid wasting API calls
+                is_valid, confidence, reason = TranscriptionValidator.validate(
+                    text,
+                    min_confidence=Config.MIN_TRANSCRIPTION_CONFIDENCE,
+                )
+                
+                if not is_valid:
+                    logger.debug(f"Skipped transcription: {reason}")
+                    self._ui.update_status("🎙  Đang nghe...")
+                    continue
+                
+                logger.debug(f"Valid transcription: {reason} - Text: '{text}'")
 
                 self._ui.update_status("🌐  Đang dịch...")
                 translation = self._translator.translate(
@@ -228,6 +255,9 @@ class App:
         Config.reload_with_keys()  # called from main thread via UI signal
         self._translator = _build_translator()
         self._ui.update_active_llm(self._translator.active_provider)
+        self._update_start_button_state()
+        if self._translator.active_provider == "none":
+            self._ui.update_status("❌  Chưa có translator khả dụng. Vui lòng cấu hình API key.")
         logger.info("Settings updated, translator rebuilt")
 
 
@@ -421,7 +451,7 @@ def main():
         raise
     # #endregion
     qt_app.setApplicationName("GameAudioTranslator")
-    qt_app.setOrganizationName("Silotech")
+    qt_app.setOrganizationName("GameAudioTranslator")
     qt_app.setQuitOnLastWindowClosed(False)
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     # #region agent log

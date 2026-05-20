@@ -1,8 +1,8 @@
 """
 Lưu cài đặt ứng dụng vào OS config directory (không dùng .env).
-  Windows: %APPDATA%\Silotech\GameAudioTranslator\settings.json
-  macOS:   ~/Library/Application Support/GameAudioTranslator/settings.json
-  Linux:   ~/.config/GameAudioTranslator/settings.json
+    Windows: %APPDATA%\\GameAudioTranslator\\settings.json
+    macOS:   ~/Library/Application Support/GameAudioTranslator/settings.json
+    Linux:   ~/.config/GameAudioTranslator/settings.json
 """
 from platformdirs import user_config_dir
 from pathlib import Path
@@ -12,7 +12,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 _APP_NAME = "GameAudioTranslator"
-_APP_AUTHOR = "Silotech"
+_APP_AUTHOR = None
 
 DEFAULTS: dict = {
     "whisper_model": "base",
@@ -29,6 +29,11 @@ DEFAULTS: dict = {
     "gemini_api_key": "",
     "openai_api_key": "",
     "anthropic_api_key": "",
+    # Noise filtering settings
+    "enable_noise_filter": True,
+    "noise_filter_strength": 0.3,  # 0.0-1.0, higher = more aggressive
+    "energy_threshold_db": -35,     # Minimum energy level in dB
+    "min_transcription_confidence": 0.4,  # 0.0-1.0, minimum confidence to send to LLM
 }
 
 

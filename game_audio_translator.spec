@@ -103,7 +103,7 @@ if sys.platform == "darwin":
         exe,
         name="GameAudioTranslator.app",
         # icon="assets/icon.icns",  # macOS icon
-        bundle_identifier="com.silotech.gameaudiotranslator",
+        bundle_identifier="com.gameaudiotranslator.app",
         info_plist={
             "NSMicrophoneUsageDescription": "Ứng dụng cần truy cập micro để nhận dạng giọng nói.",
             "NSHighResolutionCapable": True,

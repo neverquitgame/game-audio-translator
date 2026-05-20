@@ -260,7 +260,10 @@ class DevicePage(QWizardPage):
                 QSizePolicy.Expanding, QSizePolicy.Fixed,
             )
             for d in devices:
-                self._device_combo.addItem(d["name"], d["index"])
+                label = d["name"]
+                if d.get("default_sample_rate"):
+                    label = f"{label} ({d['default_sample_rate']} Hz)"
+                self._device_combo.addItem(label, d["index"])
             saved_idx = settings.get("preferred_device_index")
             if saved_idx is not None:
                 for i, d in enumerate(devices):

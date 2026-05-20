@@ -65,7 +65,7 @@ class LiteLLMTranslator(BaseTranslator):
         kwargs: dict = {
             "model": self._model,
             "messages": messages,
-            "max_tokens": 500,
+            "max_tokens": 1500,
             "temperature": 0.3,
         }
         if self._api_key:

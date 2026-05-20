@@ -24,6 +24,12 @@ class Config:
     SAMPLE_RATE: int = int(_s["sample_rate"])
     CHUNK_DURATION_MS: int = int(_s["chunk_duration_ms"])
     LLM_PRIORITY: list[str] = _s["llm_priority"]
+    
+    # Noise filtering settings
+    ENABLE_NOISE_FILTER: bool = _s.get("enable_noise_filter", True)
+    NOISE_FILTER_STRENGTH: float = float(_s.get("noise_filter_strength", 0.3))
+    ENERGY_THRESHOLD_DB: float = float(_s.get("energy_threshold_db", -35))
+    MIN_TRANSCRIPTION_CONFIDENCE: float = float(_s.get("min_transcription_confidence", 0.4))
 
     @classmethod
     def load_api_keys(cls):
@@ -50,6 +56,10 @@ class Config:
         cls.SAMPLE_RATE = int(s["sample_rate"])
         cls.CHUNK_DURATION_MS = int(s["chunk_duration_ms"])
         cls.LLM_PRIORITY = s["llm_priority"]
+        cls.ENABLE_NOISE_FILTER = s.get("enable_noise_filter", True)
+        cls.NOISE_FILTER_STRENGTH = float(s.get("noise_filter_strength", 0.3))
+        cls.ENERGY_THRESHOLD_DB = float(s.get("energy_threshold_db", -35))
+        cls.MIN_TRANSCRIPTION_CONFIDENCE = float(s.get("min_transcription_confidence", 0.4))
 
     @classmethod
     def reload_with_keys(cls):

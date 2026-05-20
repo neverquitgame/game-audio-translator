@@ -283,7 +283,13 @@ class TranslatorUI(QMainWindow):
         device_label.setStyleSheet("color: #6c7086; font-size: 11px; font-weight: bold;")
 
         self._device_combo = QComboBox()
-        names = [d["name"] for d in self._devices] if self._devices else ["(Không có thiết bị)"]
+        if self._devices:
+            names = [
+                f"{d['name']} ({d['default_sample_rate']} Hz)" if d.get("default_sample_rate") else d["name"]
+                for d in self._devices
+            ]
+        else:
+            names = ["(Không có thiết bị)"]
         self._device_combo.addItems(names)
         self._device_combo.setMinimumWidth(220)
         self._device_combo.setFixedHeight(34)
@@ -669,6 +675,8 @@ class TranslatorUI(QMainWindow):
     # ── Actions ───────────────────────────────────────────────────────────────
 
     def _on_toggle(self):
+        if not self._toggle_btn.isEnabled() and not self._running:
+            return
         if not self._running:
             idx = self._device_combo.currentIndex()
             device_index = self._devices[idx]["index"] if self._devices and 0 <= idx < len(self._devices) else None
@@ -702,6 +710,13 @@ class TranslatorUI(QMainWindow):
                 self._copy_btn.setEnabled(True),
             ))
             self.update_status("📋  Đã copy bản dịch")
+
+    def set_start_enabled(self, enabled: bool, tooltip: str | None = None):
+        self._toggle_btn.setEnabled(enabled)
+        if tooltip is not None:
+            self._toggle_btn.setToolTip(tooltip)
+        elif not enabled:
+            self._toggle_btn.setToolTip("Cần API key hoặc Ollama local để bắt đầu")
 
     def _clear_history(self):
         self._history_box.clear()
@@ -788,7 +803,8 @@ class TranslatorUI(QMainWindow):
             key = entry.text().strip()
             if key:
                 save_api_key(provider, key)
-                self._api_keys_cache[provider] = key
+            self._api_keys_cache[provider] = key
+            self._settings[f"{provider}_api_key"] = key
 
         llm_priority = [
             self._llm_list.item(i).text()

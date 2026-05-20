@@ -30,20 +30,50 @@ class AudioCapture:
         self._thread = None
         self._running = False
         self._stop_lock = threading.Lock()
+        self._capture_rate = Config.SAMPLE_RATE
+        self._resample = False
 
     def list_audio_devices(self) -> list[dict]:
         devices = []
         for i in range(self._pa.get_device_count()):
             info = self._pa.get_device_info_by_index(i)
+            sample_rate = int(info.get("defaultSampleRate", 0))
             if IS_WINDOWS:
                 # On Windows with pyaudiowpatch, loopback devices have isLoopbackDevice flag
                 if info.get("isLoopbackDevice", False):
-                    devices.append({"index": i, "name": info["name"], "channels": info["maxInputChannels"]})
+                    devices.append({
+                        "index": i,
+                        "name": info["name"],
+                        "channels": info["maxInputChannels"],
+                        "default_sample_rate": sample_rate,
+                    })
             else:
                 # On macOS/Linux, list input devices (microphones)
                 if info.get("maxInputChannels", 0) > 0:
-                    devices.append({"index": i, "name": info["name"], "channels": info["maxInputChannels"]})
+                    devices.append({
+                        "index": i,
+                        "name": info["name"],
+                        "channels": info["maxInputChannels"],
+                        "default_sample_rate": sample_rate,
+                    })
         return devices
+
+    def _device_default_rate(self, device_index: int) -> int:
+        try:
+            info = self._pa.get_device_info_by_index(device_index)
+            return int(info.get("defaultSampleRate", Config.SAMPLE_RATE))
+        except Exception:
+            return Config.SAMPLE_RATE
+
+    def _resample_int16(self, samples: np.ndarray, src_rate: int, dst_rate: int) -> np.ndarray:
+        if src_rate == dst_rate or len(samples) == 0:
+            return samples
+        out_len = int(round(len(samples) * dst_rate / src_rate))
+        if out_len <= 0:
+            return np.empty((0,), dtype=np.int16)
+        positions = np.linspace(0, len(samples) - 1, out_len)
+        resampled = np.interp(positions, np.arange(len(samples)), samples.astype(np.float64))
+        return np.clip(np.round(resampled), -32768, 32767).astype(np.int16)
 
     def get_default_device_index(self) -> Optional[int]:
         if IS_WINDOWS:
@@ -78,28 +108,62 @@ class AudioCapture:
         try:
             device_info = self._pa.get_device_info_by_index(device_index)
             channels = min(int(device_info.get("maxInputChannels", 1)), 2)
-            chunk_size = int(Config.SAMPLE_RATE * Config.CHUNK_DURATION_MS / 1000)
+            device_rate = self._device_default_rate(device_index)
+            stream_rate = Config.SAMPLE_RATE
+            chunk_size = int(stream_rate * Config.CHUNK_DURATION_MS / 1000)
+            stream_exception = None
 
-            # Use blocking mode (no stream_callback) to avoid PortAudio's AUHAL
-            # callback path which double-frees on macOS with virtual audio devices.
-            self._stream = self._pa.open(
-                format=pyaudio.paInt16,
-                channels=channels,
-                rate=Config.SAMPLE_RATE,
-                input=True,
-                input_device_index=device_index,
-                frames_per_buffer=chunk_size,
-            )
+            # Attempt to open the requested sample rate first; if the device does not
+            # support it, fall back to the device's default sample rate and resample.
+            try:
+                self._stream = self._pa.open(
+                    format=pyaudio.paInt16,
+                    channels=channels,
+                    rate=stream_rate,
+                    input=True,
+                    input_device_index=device_index,
+                    frames_per_buffer=chunk_size,
+                )
+            except Exception as e:
+                stream_exception = e
+                if device_rate != stream_rate:
+                    logger.warning(
+                        "Device does not support configured sample rate %s Hz; falling back to device default %s Hz",
+                        stream_rate,
+                        device_rate,
+                    )
+                    stream_rate = device_rate
+                    chunk_size = int(stream_rate * Config.CHUNK_DURATION_MS / 1000)
+                    self._stream = self._pa.open(
+                        format=pyaudio.paInt16,
+                        channels=channels,
+                        rate=stream_rate,
+                        input=True,
+                        input_device_index=device_index,
+                        frames_per_buffer=chunk_size,
+                    )
+                else:
+                    raise
+
+            self._capture_rate = stream_rate
+            self._resample = self._capture_rate != Config.SAMPLE_RATE
             self._running = True
 
             def _read_loop():
                 while self._running:
                     try:
                         data = self._stream.read(chunk_size, exception_on_overflow=False)
-                        # Downmix stereo → mono so webrtcvad always receives mono PCM
-                        if channels > 1 and data:
-                            pcm = np.frombuffer(data, dtype=np.int16)
-                            data = pcm.reshape(-1, channels).mean(axis=1).astype(np.int16).tobytes()
+                        if not data:
+                            continue
+
+                        pcm = np.frombuffer(data, dtype=np.int16)
+                        if channels > 1:
+                            pcm = pcm.reshape(-1, channels).mean(axis=1).astype(np.int16)
+
+                        if self._resample:
+                            pcm = self._resample_int16(pcm, self._capture_rate, Config.SAMPLE_RATE)
+
+                        data = pcm.tobytes()
                         if callback and data:
                             callback(data)
                     except Exception as e:
@@ -129,8 +193,13 @@ class AudioCapture:
             thread, self._thread = self._thread, None
 
         # Do blocking operations outside the lock to avoid holding lock during join/close
+        if stream:
+            try:
+                stream.stop_stream()
+            except Exception:
+                pass
         if thread and thread.is_alive():
-            thread.join(timeout=2)
+            thread.join(timeout=3)
         if stream:
             try:
                 stream.close()
