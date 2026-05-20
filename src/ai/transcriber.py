@@ -45,6 +45,10 @@ class Transcriber:
                 self._on_error(str(e))
 
     @property
+    def model_size(self) -> str:
+        return self._model_size
+
+    @property
     def is_ready(self) -> bool:
         return self._model_ready.is_set() and self._model is not None
 
