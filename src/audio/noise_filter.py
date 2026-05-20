@@ -1,12 +1,9 @@
 """
 Advanced audio filtering to reduce noise and improve speech detection.
 """
-import logging
 import numpy as np
 from typing import Tuple
 import scipy.signal as signal
-
-logger = logging.getLogger(__name__)
 
 
 class NoiseFilter:
@@ -43,8 +40,7 @@ class NoiseFilter:
             # Average magnitude spectrum across time
             magnitude = np.abs(Zxx)
             self._noise_profile = np.mean(magnitude, axis=1)
-        except Exception as e:
-            logger.debug(f"Could not compute noise profile: {e}")
+        except Exception:
             self._noise_profile = None
 
     def denoise(self, audio: np.ndarray, strength: float = 0.5) -> np.ndarray:
@@ -110,8 +106,7 @@ class NoiseFilter:
                 audio_cleaned = audio_cleaned[:len(audio)]
 
             return audio_cleaned
-        except Exception as e:
-            logger.debug(f"Spectral subtraction error: {e}")
+        except Exception:
             return audio
 
     def _noise_gate(self, audio: np.ndarray, threshold: float = -40) -> np.ndarray:
@@ -170,6 +165,5 @@ class NoiseFilter:
             # Score: higher RMS + lower ZCR + lower spectral flatness = speech-like
             score = min(1.0, (rms * 100) * (1.0 - zcr) * (1.0 - spectral_flatness))
             return max(0.0, score)
-        except Exception as e:
-            logger.debug(f"Could not compute quality score: {e}")
+        except Exception:
             return 0.5  # Default to neutral

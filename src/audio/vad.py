@@ -76,8 +76,7 @@ class VoiceActivityDetector:
             is_speech = is_speech and (quality_score >= _MIN_QUALITY_SCORE)
 
             return is_speech
-        except Exception as e:
-            logger.debug(f"VAD error on chunk: {e}")
+        except Exception:
             return False
 
     def get_speech_segment(
