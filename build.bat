@@ -7,42 +7,25 @@ echo   Game Audio Translator — Dong goi thanh .exe
 echo ============================================================
 echo.
 
-:: Kiem tra Python
-python --version >nul 2>&1
+:: Kiem tra uv (https://docs.astral.sh/uv/)
+where uv >nul 2>&1
 if errorlevel 1 (
-    echo [LOI] Khong tim thay Python. Hay cai Python 3.10+ va thu lai.
+    echo [LOI] Khong tim thay uv. Cai dat: https://docs.astral.sh/uv/getting-started/installation/
     pause & exit /b 1
 )
 
-:: Tao/kich hoat moi truong ao neu chua co
-if not exist ".venv\Scripts\activate.bat" (
-    echo [1/4] Tao moi truong ao...
-    python -m venv .venv
-) else (
-    echo [1/4] Moi truong ao da ton tai.
-)
-
-call .venv\Scripts\activate.bat
-
-:: Cai dependencies
-echo [2/4] Cai dat dependencies...
-pip install -r requirements.txt --quiet
+:: Dong bo moi truong (.venv) va dependencies (gom PyInstaller)
+echo [1/3] Dong bo dependencies voi uv...
+uv sync --group dev
 if errorlevel 1 (
-    echo [LOI] Cai dat requirements.txt that bai.
-    pause & exit /b 1
-)
-
-:: Cai PyInstaller
-pip install pyinstaller --quiet
-if errorlevel 1 (
-    echo [LOI] Cai dat PyInstaller that bai.
+    echo [LOI] uv sync that bai.
     pause & exit /b 1
 )
 
 :: Build
-echo [3/4] Dang dong goi ung dung...
+echo [2/3] Dang dong goi ung dung...
 echo.
-pyinstaller game_audio_translator.spec --clean --noconfirm
+uv run pyinstaller game_audio_translator.spec --clean --noconfirm
 if errorlevel 1 (
     echo.
     echo [LOI] Build that bai. Xem log o tren de biet nguyen nhan.
@@ -50,7 +33,7 @@ if errorlevel 1 (
 )
 
 :: Copy .env.example sang thu muc dist de nguoi dung tham khao
-echo [4/4] Chuan bi thu muc phan phoi...
+echo [3/3] Chuan bi thu muc phan phoi...
 if exist "dist\GameAudioTranslator.exe" (
     copy ".env.example" "dist\.env.example" >nul
     echo.

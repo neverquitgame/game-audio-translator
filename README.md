@@ -10,7 +10,8 @@
 
 | | Tối thiểu |
 |---|---|
-| **Python** | 3.10+ |
+| **[uv](https://docs.astral.sh/uv/)** | Khuyến nghị (quản lý Python + dependencies) |
+| **Python** | 3.10+ (uv có thể tự cài qua `.python-version`) |
 | **OS** | Windows 10/11 (để dùng WASAPI loopback) |
 | **RAM** | 2 GB trở lên (model `base` dùng ~150 MB) |
 
@@ -27,35 +28,30 @@ git clone <repo-url>
 cd game-audio-translator
 ```
 
-### 2. Tạo môi trường ảo (khuyến nghị)
+### 2. Cài [uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 ```bash
-python -m venv .venv
-
-# Windows
-.venv\Scripts\activate
-
 # macOS / Linux
-source .venv/bin/activate
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
 ### 3. Cài đặt dependencies
 
-**Trên Windows:**
+Dự án dùng `pyproject.toml` + `uv.lock`. Lệnh sau tạo `.venv` và cài đúng phiên bản đã khóa:
+
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
-**Trên macOS / Linux** (bỏ qua `pyaudiowpatch` không tương thích):
-```bash
-pip install faster-whisper google-generativeai pyaudio webrtcvad numpy python-dotenv
-```
-
-> Nếu gặp lỗi cài `pyaudio` trên macOS, hãy cài PortAudio trước:
+> **macOS:** Nếu build `pyaudio` lỗi, cài PortAudio trước rồi chạy lại `uv sync`:
 > ```bash
 > brew install portaudio
-> pip install pyaudio
 > ```
+
+**Cách thay thế (pip):** `pip install -r requirements.txt` — chỉ dùng khi không có uv.
 
 ### 4. Cấu hình API key
 
@@ -85,8 +81,10 @@ GEMINI_API_KEY=AIza...
 ## Cách chạy
 
 ```bash
-python main.py
+uv run python main.py
 ```
+
+Hoặc kích hoạt `.venv` rồi chạy `python main.py` (sau `uv sync`).
 
 1. Chọn thiết bị âm thanh từ dropdown (trên Windows sẽ thấy các thiết bị loopback)
 2. Nhấn **▶ Bắt đầu**
@@ -129,7 +127,10 @@ Tất cả cài đặt đều có thể thay đổi trong file `.env`:
 ```
 game-audio-translator/
 ├── main.py              # Entry point
-├── requirements.txt
+├── pyproject.toml       # Dependencies (nguồn chính)
+├── uv.lock              # Lock file cho uv sync
+├── .python-version      # Python mặc định (3.12)
+├── requirements.txt     # Tương thích pip (tùy chọn)
 ├── .env.example
 ├── .env                 # (tự tạo, không commit)
 └── src/
@@ -141,8 +142,32 @@ game-audio-translator/
     │   ├── transcriber.py  # STT với faster-whisper
     │   └── translator.py   # Dịch với Gemini API
     └── ui/
-        └── window.py    # Giao diện tkinter
+        └── window.py    # Giao diện PySide6
 ```
+
+---
+
+## Đóng gói (.exe, Windows)
+
+Cần [uv](https://docs.astral.sh/uv/) trên Windows:
+
+```bat
+build.bat
+```
+
+Script chạy `uv sync --group dev` rồi `uv run pyinstaller ...`.
+
+---
+
+## Lệnh uv hữu ích
+
+| Lệnh | Mô tả |
+|------|--------|
+| `uv sync` | Cài dependencies vào `.venv` theo `uv.lock` |
+| `uv sync --group dev` | Thêm PyInstaller (để build) |
+| `uv lock` | Cập nhật `uv.lock` sau khi sửa `pyproject.toml` |
+| `uv run python main.py` | Chạy app trong môi trường dự án |
+| `uv add <package>` | Thêm dependency và cập nhật lock |
 
 ---
 
