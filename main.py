@@ -44,28 +44,27 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# Cache (provider_name, model, api_key) → instance để khỏi tạo lại mỗi lần
+# user lưu settings. Ollama không có key nên cache theo (name, model, "").
+_TRANSLATOR_CACHE: dict[tuple[str, str, str], LiteLLMTranslator] = {}
+
+
+def _get_translator(name: str, model: str, api_key: str = "") -> LiteLLMTranslator:
+    key = (name, model, api_key)
+    inst = _TRANSLATOR_CACHE.get(key)
+    if inst is None:
+        inst = LiteLLMTranslator(model=model, api_key=api_key, name=name)
+        _TRANSLATOR_CACHE[key] = inst
+    return inst
+
+
 def _build_translator() -> MultiTranslator:
     priority = Config.LLM_PRIORITY
     all_translators = {
-        "gemini": LiteLLMTranslator(
-            model=f"gemini/{Config.GEMINI_MODEL}",
-            api_key=Config.GEMINI_API_KEY,
-            name="gemini",
-        ),
-        "openai": LiteLLMTranslator(
-            model="gpt-4o-mini",
-            api_key=Config.OPENAI_API_KEY,
-            name="openai",
-        ),
-        "anthropic": LiteLLMTranslator(
-            model="anthropic/claude-haiku-4-5",
-            api_key=Config.ANTHROPIC_API_KEY,
-            name="anthropic",
-        ),
-        "ollama": LiteLLMTranslator(
-            model="ollama/llama3.2",
-            name="ollama",
-        ),
+        "gemini": _get_translator("gemini", f"gemini/{Config.GEMINI_MODEL}", Config.GEMINI_API_KEY),
+        "openai": _get_translator("openai", "gpt-4o-mini", Config.OPENAI_API_KEY),
+        "anthropic": _get_translator("anthropic", "anthropic/claude-haiku-4-5", Config.ANTHROPIC_API_KEY),
+        "ollama": _get_translator("ollama", "ollama/llama3.2"),
     }
     ordered = [all_translators[n] for n in priority if n in all_translators]
     ordered += [t for n, t in all_translators.items() if n not in priority]
@@ -171,7 +170,7 @@ class App:
                     text,
                     min_confidence=Config.MIN_TRANSCRIPTION_CONFIDENCE,
                 )
-                
+
                 if not is_valid:
                     self._ui.update_status("🎙  Đang nghe...")
                     continue
@@ -234,12 +233,14 @@ class App:
 
     def _on_settings_changed(self, new_settings: dict):
         Config.reload_with_keys()  # called from main thread via UI signal
+        # Rebuild VAD để áp dụng các thay đổi noise/energy/aggressiveness
+        self._vad = VoiceActivityDetector()
         self._translator = _build_translator()
         self._ui.update_active_llm(self._translator.active_provider)
         self._update_start_button_state()
         if self._translator.active_provider == "none":
             self._ui.update_status("❌  Chưa có translator khả dụng. Vui lòng cấu hình API key.")
-        logger.info("Settings updated, translator rebuilt")
+        logger.info("Settings updated, translator & VAD rebuilt")
 
 
 class _BootstrapSignals(QObject):
@@ -283,13 +284,11 @@ class Bootstrap:
             self._loading.set_status(msg)
 
     def _init_worker(self):
+        """Bootstrap nhanh: chỉ quét device + load API key.
+        Whisper model được tải SAU khi qua onboarding (để biết user chọn model nào)."""
         try:
             self._set_status("Đang tải cấu hình...")
             Config.reload()
-
-            self._set_status("Đang xác thực API keys...")
-            # Load API keys from keychain here — loading screen is already visible,
-            # so any macOS Keychain dialog appears while the user can see the app UI.
             Config.reload_api_keys(only_priority=True)
 
             self._set_status("Đang quét thiết bị âm thanh...")
@@ -298,22 +297,10 @@ class Bootstrap:
             if not devices:
                 logger.warning("No audio devices found")
 
-            self._set_status("Đang tải Whisper model (lần đầu có thể mất vài phút)...")
-            transcriber = Transcriber(
-                model_size=Config.WHISPER_MODEL,
-                on_ready=lambda: None,
-                on_error=lambda e: logger.error(f"Whisper error: {e}"),
-            )
-            transcriber.wait_until_ready(timeout=300.0)
-
-            self._set_status("Đang chuẩn bị bộ dịch...")
-            translator = _build_translator()
-
             self._init_result = {
                 "capture": capture,
                 "devices": devices,
-                "transcriber": transcriber,
-                "translator": translator,
+                "transcriber": None,  # sẽ tạo sau onboarding
             }
             self._signals.init_complete.emit()
         except Exception as e:
@@ -325,21 +312,42 @@ class Bootstrap:
             self._loading.set_status(f"❌ Lỗi: {error}")
 
     def _on_init_complete(self):
-        if self._loading:
-            self._loading.close_loading()
-
         settings = load_settings()
         onboarding_done = settings.get("onboarding_completed")
         if not onboarding_done:
+            # Đóng loading, mở wizard. Whisper sẽ load sau wizard với model user chọn.
+            if self._loading:
+                self._loading.close_loading()
             self._wizard = OnboardingWizard(
                 devices=self._init_result["devices"],
-                on_complete=self._launch_main_app,
+                on_complete=self._after_onboarding,
             )
             self._wizard.show()
             self._wizard.raise_()
             self._wizard.activateWindow()
         else:
-            self._launch_main_app()
+            self._after_onboarding()
+
+    def _after_onboarding(self):
+        """Sau onboarding (hoặc skip nếu đã onboard): load Whisper rồi mở app."""
+        Config.reload()
+        Config.reload_api_keys(only_priority=False)
+
+        if not self._loading or not self._loading.isVisible():
+            self._loading = LoadingScreen()
+            self._loading.show()
+        self._loading.set_status(f"Đang tải Whisper ({Config.WHISPER_MODEL})...")
+
+        def _load_then_launch():
+            transcriber = Transcriber(
+                model_size=Config.WHISPER_MODEL,
+                on_error=lambda e: logger.error(f"Whisper error: {e}"),
+            )
+            transcriber.wait_until_ready(timeout=300.0)
+            self._init_result["transcriber"] = transcriber
+            QTimer.singleShot(0, self._launch_main_app)
+
+        threading.Thread(target=_load_then_launch, daemon=True, name="whisper-loader").start()
 
     def _launch_main_app(self):
         try:
@@ -348,27 +356,10 @@ class Bootstrap:
             logger.exception(f"_launch_main_app failed: {e}")
 
     def _launch_main_app_inner(self):
+        if self._loading:
+            self._loading.close_loading()
+
         r = self._init_result
-        Config.reload()
-
-        transcriber = r["transcriber"]
-        if transcriber.model_size != Config.WHISPER_MODEL:
-            logger.info("Whisper model thay đổi sau thiết lập — đang tải lại...")
-            loading2 = LoadingScreen()
-            loading2.show()
-            loading2.set_status(f"Đang tải Whisper ({Config.WHISPER_MODEL})...")
-            new_t = Transcriber(model_size=Config.WHISPER_MODEL)
-            ready = new_t.wait_until_ready(timeout=300.0)
-            loading2.close_loading()
-            if not ready:
-                logger.error(
-                    f"Không tải được Whisper model '{Config.WHISPER_MODEL}' — "
-                    f"tiếp tục với model cũ '{transcriber.model_size}'"
-                )
-            else:
-                r["transcriber"] = new_t
-                transcriber = new_t
-
         self._ui = TranslatorUI(
             devices=r["devices"],
             on_start=lambda idx: None,  # overridden by App.__init__
@@ -378,7 +369,7 @@ class Bootstrap:
         self._app = App(
             ui=self._ui,
             capture=r["capture"],
-            transcriber=transcriber,
+            transcriber=r["transcriber"],
             translator=_build_translator(),
             devices=r["devices"],
         )
