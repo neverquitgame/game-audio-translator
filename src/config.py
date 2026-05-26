@@ -1,7 +1,5 @@
-from src.settings_store import load as _load_settings, migrate_from_env_if_needed
+from src.settings_store import load as _load_settings
 from src.keystore import get_api_key
-
-migrate_from_env_if_needed()
 
 _s = _load_settings()
 
