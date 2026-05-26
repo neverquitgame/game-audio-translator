@@ -5,7 +5,7 @@ import threading
 from typing import Optional
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QTimer, QObject, Signal
+from PySide6.QtCore import QTimer, QObject, Signal  # QTimer dùng cho _start_init
 
 from src.config import Config
 from src.settings_store import load as load_settings
@@ -24,6 +24,7 @@ class _Signals(QObject):
     init_complete = Signal()
     init_failed = Signal(str)
     status_changed = Signal(str)
+    whisper_ready = Signal()  # phát từ background thread → slot trên main thread
 
 
 class Bootstrap:
@@ -41,6 +42,7 @@ class Bootstrap:
         self._sig.init_complete.connect(self._on_init_complete)
         self._sig.init_failed.connect(self._on_init_failed)
         self._sig.status_changed.connect(self._apply_status)
+        self._sig.whisper_ready.connect(self._launch)  # cross-thread safe
 
     def run(self):
         self._loading = LoadingScreen()
@@ -85,7 +87,8 @@ class Bootstrap:
         settings = load_settings()
         if not settings.get("onboarding_completed"):
             if self._loading:
-                self._loading.close_loading()
+                self._loading.hide()
+                self._loading = None
             self._wizard = OnboardingWizard(
                 devices=self._init_result["devices"],
                 on_complete=self._after_onboarding,
@@ -114,7 +117,8 @@ class Bootstrap:
             )
             t.wait_until_ready(timeout=300.0)
             self._init_result["transcriber"] = t
-            QTimer.singleShot(0, self._launch)
+            # Dùng Qt signal (thread-safe) thay vì QTimer.singleShot từ background thread
+            self._sig.whisper_ready.emit()
 
         threading.Thread(target=_load, daemon=True, name="whisper-loader").start()
 
@@ -127,8 +131,13 @@ class Bootstrap:
             logger.exception("_launch failed")
 
     def _launch_inner(self):
+        # Đóng loading screen ĐỒNG BỘ trước khi tạo main window.
+        # close_loading() dùng QTimer.singleShot(120, hide) gây race condition:
+        # khi hide() fires sau 120ms, setQuitOnLastWindowClosed=True đã set nhưng
+        # main window chưa hoàn toàn "visible" → Qt emit lastWindowClosed → app quit.
         if self._loading:
-            self._loading.close_loading()
+            self._loading.hide()
+            self._loading = None
 
         r = self._init_result
         self._ui = TranslatorUI(
@@ -144,6 +153,7 @@ class Bootstrap:
             translator=build_translator(),
             devices=r["devices"],
         )
+        # show() trước, setQuitOnLastWindowClosed(True) sau → Qt thấy window trước khi flag set
         self._ui.show()
         self._ui.raise_()
         self._ui.activateWindow()
