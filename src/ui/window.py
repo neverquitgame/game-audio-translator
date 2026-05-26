@@ -776,27 +776,28 @@ class TranslatorUI(QMainWindow):
 
     @staticmethod
     def _do_verify_key(provider: str, key: str) -> bool:
+        """Verify API key bằng 1 request nhỏ qua litellm.
+        Dùng chung 1 client (litellm) thay vì 3 SDK riêng → giảm dependency."""
+        models = {
+            "gemini":    "gemini/gemini-2.5-flash",
+            "openai":    "gpt-4o-mini",
+            "anthropic": "anthropic/claude-haiku-4-5",
+        }
+        model = models.get(provider)
+        if not model:
+            return False
         try:
-            if provider == "gemini":
-                from google import genai
-                genai.Client(api_key=key).models.generate_content(
-                    model="gemini-2.5-flash", contents="Reply: OK",
-                )
-                return True
-            elif provider == "openai":
-                from openai import OpenAI
-                OpenAI(api_key=key).models.list()
-                return True
-            elif provider == "anthropic":
-                import anthropic
-                anthropic.Anthropic(api_key=key).messages.create(
-                    model="claude-haiku-4-5", max_tokens=10,
-                    messages=[{"role": "user", "content": "hi"}],
-                )
-                return True
+            import litellm
+            litellm.suppress_debug_info = True
+            litellm.completion(
+                model=model,
+                api_key=key,
+                messages=[{"role": "user", "content": "hi"}],
+                max_tokens=1,
+            )
+            return True
         except Exception:
             return False
-        return False
 
     def _save_settings(self):
         for provider, entry in self._api_key_entries.items():
