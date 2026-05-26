@@ -79,7 +79,7 @@ class Transcriber:
             )
             text = " ".join(seg.text.strip() for seg in segments).strip()
             elapsed = time.time() - start
-            logger.info(f"Transcribed in {elapsed:.2f}s: '{text[:80]}{'...' if len(text) > 80 else ''}'")
+            logger.debug(f"Transcribed in {elapsed:.2f}s: '{text[:80]}{'...' if len(text) > 80 else ''}'")
             return text if text else None
         except Exception as e:
             logger.error(f"Transcription error: {e}")
