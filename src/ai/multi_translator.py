@@ -4,13 +4,14 @@ Tự động chuyển sang translator tiếp theo nếu bị rate limit.
 """
 import logging
 from typing import Optional
-from src.ai.translator_base import BaseTranslator
+
+from src.ai.translators.litellm_t import LiteLLMTranslator
 
 logger = logging.getLogger(__name__)
 
 
 class MultiTranslator:
-    def __init__(self, translators: list[BaseTranslator]):
+    def __init__(self, translators: list[LiteLLMTranslator]):
         self._translators = [t for t in translators if t.is_available()]
         if not self._translators:
             logger.warning("Không có translator nào khả dụng!")
@@ -42,7 +43,3 @@ class MultiTranslator:
 
         logger.error("Tất cả translator đều thất bại")
         return None
-
-    def rebuild(self, translators: list[BaseTranslator]):
-        """Rebuild danh sách translator (sau khi user thay đổi settings)."""
-        self._translators = [t for t in translators if t.is_available()]

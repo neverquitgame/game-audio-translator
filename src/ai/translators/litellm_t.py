@@ -1,18 +1,16 @@
 """
 LiteLLMTranslator — wrapper thống nhất cho mọi LLM (Gemini, OpenAI, Anthropic, Ollama, ...).
-Thay thế các translator riêng lẻ, chỉ cần một thư viện litellm duy nhất.
 """
 import time
 import logging
 from typing import Optional
 
-from src.ai.translator_base import BaseTranslator
-
 logger = logging.getLogger(__name__)
 _RETRY_DELAY = 2.0
+_OLLAMA_CHECK_TTL = 30.0  # giây cache trạng thái Ollama
 
 
-class LiteLLMTranslator(BaseTranslator):
+class LiteLLMTranslator:
     """
     Translator dùng LiteLLM — hỗ trợ 100+ model qua một API thống nhất.
 
@@ -27,6 +25,7 @@ class LiteLLMTranslator(BaseTranslator):
         self._model = model
         self._api_key = api_key
         self._name = name or model.split("/")[0]
+        self._ollama_last_check: tuple[float, bool] = (0.0, False)
 
     @property
     def provider_name(self) -> str:
@@ -34,12 +33,18 @@ class LiteLLMTranslator(BaseTranslator):
 
     def is_available(self) -> bool:
         if self._name == "ollama":
+            now = time.monotonic()
+            ts, ok = self._ollama_last_check
+            if now - ts < _OLLAMA_CHECK_TTL:
+                return ok
             try:
                 import urllib.request
-                urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
-                return True
+                urllib.request.urlopen("http://localhost:11434/api/tags", timeout=1)
+                ok = True
             except Exception:
-                return False
+                ok = False
+            self._ollama_last_check = (now, ok)
+            return ok
         return bool(self._api_key)
 
     def translate(
@@ -77,7 +82,7 @@ class LiteLLMTranslator(BaseTranslator):
                 litellm.suppress_debug_info = True
                 response = litellm.completion(**kwargs)
                 result = response.choices[0].message.content.strip()
-                logger.info(f"[{self._name}] Translated: '{text[:50]}' → '{result[:50]}'")
+                logger.debug(f"[{self._name}] Translated: '{text[:50]}' → '{result[:50]}'")
                 return result
             except Exception as e:
                 err_str = str(e).lower()
