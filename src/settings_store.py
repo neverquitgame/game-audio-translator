@@ -34,6 +34,8 @@ DEFAULTS: dict = {
     "noise_filter_strength": 0.3,  # 0.0-1.0, higher = more aggressive
     "energy_threshold_db": -35,     # Minimum energy level in dB
     "min_transcription_confidence": 0.4,  # 0.0-1.0, minimum confidence to send to LLM
+    # UI
+    "always_on_top": True,
 }
 
 
@@ -70,50 +72,3 @@ def save(settings: dict) -> bool:
         return False
 
 
-def migrate_from_env_if_needed():
-    """
-    Nếu lần đầu chạy Phase 2 mà vẫn còn .env cũ, migrate sang settings.json.
-    Chạy 1 lần rồi thôi.
-    """
-    import sys
-    from pathlib import Path as _Path
-
-    if getattr(sys, "frozen", False):
-        env_path = _Path(sys.executable).parent / ".env"
-    else:
-        env_path = _Path(__file__).parent.parent / ".env"
-
-    if not env_path.exists() or config_path().exists():
-        return
-
-    try:
-        from dotenv import dotenv_values
-        values = dotenv_values(env_path)
-    except ImportError:
-        values = {}
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            if "=" in line and not line.startswith("#"):
-                k, _, v = line.partition("=")
-                values[k.strip()] = v.strip()
-
-    mapping = {
-        "WHISPER_MODEL": "whisper_model",
-        "TARGET_LANGUAGE": "target_language",
-        "VAD_AGGRESSIVENESS": "vad_aggressiveness",
-        "SAMPLE_RATE": "sample_rate",
-        "CHUNK_DURATION_MS": "chunk_duration_ms",
-        "GEMINI_MODEL": "gemini_model",
-    }
-    settings = DEFAULTS.copy()
-    for env_key, cfg_key in mapping.items():
-        if env_key in values and values[env_key]:
-            val = values[env_key]
-            if cfg_key in ("vad_aggressiveness", "sample_rate", "chunk_duration_ms"):
-                try:
-                    val = int(val)
-                except ValueError:
-                    pass
-            settings[cfg_key] = val
-
-    save(settings)
-    logger.info(f"Đã migrate settings từ {env_path} sang {config_path()}")
