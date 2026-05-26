@@ -25,15 +25,14 @@ a = Analysis(
         "pyaudio",
         "pyaudiowpatch",
         "webrtcvad",
-        # AI
-        "google.genai",
-        "google.genai.types",
-        "google.auth",
-        "google.auth.transport",
-        # Numpy
+        # LLM — chỉ dùng litellm cho mọi provider
+        "litellm",
+        # Numpy / Scipy
         "numpy",
         "numpy.core._multiarray_umath",
-        # PySide6 — thêm các module Qt cần thiết
+        "scipy",
+        "scipy.signal",
+        # PySide6
         "PySide6",
         "PySide6.QtCore",
         "PySide6.QtGui",
@@ -42,19 +41,23 @@ a = Analysis(
         "queue",
         "threading",
         "logging",
-        "keyring",
-        "keyring.backends",
-        "keyring.backends.Windows",
-        "keyring.backends.fail",
-        "keyrings.alt",
-        "keyrings.alt.file",
         "platformdirs",
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        "tkinter",          # Không dùng Tkinter nữa
+        # SDK trùng chức năng với litellm — không cần
+        "google",
+        "google.genai",
+        "google.auth",
+        "openai",
+        "anthropic",
+        # OS keyring — không còn dùng (lưu key trong settings.json)
+        "keyring",
+        "keyrings",
+        # UI / dev tools không dùng
+        "tkinter",
         "matplotlib",
         "PIL",
         "IPython",
