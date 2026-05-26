@@ -34,6 +34,8 @@ DEFAULTS: dict = {
     "noise_filter_strength": 0.3,  # 0.0-1.0, higher = more aggressive
     "energy_threshold_db": -35,     # Minimum energy level in dB
     "min_transcription_confidence": 0.4,  # 0.0-1.0, minimum confidence to send to LLM
+    # UI
+    "always_on_top": True,
 }
 
 

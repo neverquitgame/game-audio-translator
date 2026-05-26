@@ -290,7 +290,7 @@ class Bootstrap:
             self._set_status("Đang xác thực API keys...")
             # Load API keys from keychain here — loading screen is already visible,
             # so any macOS Keychain dialog appears while the user can see the app UI.
-            Config.load_api_keys()
+            Config.reload_api_keys(only_priority=True)
 
             self._set_status("Đang quét thiết bị âm thanh...")
             capture = AudioCapture()
